@@ -125,44 +125,85 @@ def plot_escenarios_y_var(df_resumen: pd.DataFrame, tc_var: float):
     return fig
 
 
-def plot_backtesting(df_sunat_full: pd.DataFrame, fecha_inicio: date, fecha_final: date, tc_proj: float):
-    """Backtesting simple: histórico observado vs nivel proyectado (media)."""
-    mask = (df_sunat_full.index.date >= fecha_inicio) & (df_sunat_full.index.date <= fecha_final)
-    df_bt = df_sunat_full.loc[mask]
+import plotly.graph_objects as go
+
+def plot_backtesting(df_sunat_full: pd.DataFrame,
+                     fecha_inicio: date,
+                     fecha_final: date,
+                     tc_var: float,
+                     tc_cvar: float) -> go.Figure:
+    """
+    Gráfico de backtesting: TC SUNAT histórico vs niveles TC VaR y TC CVaR.
+
+    - df_sunat_full: DataFrame con columna 'tc_sunat' indexado por fecha.
+    - fecha_inicio, fecha_final: rango de backtesting.
+    - tc_var: tipo de cambio preferencial basado en VaR.
+    - tc_cvar: tipo de cambio preferencial basado en CVaR.
+    """
+    mask = (
+        (df_sunat_full.index.date >= fecha_inicio) &
+        (df_sunat_full.index.date <= fecha_final)
+    )
+    df_bt = df_sunat_full.loc[mask].copy()
+
+    if df_bt.empty:
+        # Por seguridad, si no hay datos en ese rango
+        fig = go.Figure()
+        fig.update_layout(
+            title="Backtesting simple del modelo",
+            xaxis_title="Fecha",
+            yaxis_title="Tipo de cambio (S/ por US$)",
+            template="plotly_dark",
+        )
+        return fig
+
+    x_vals = df_bt.index
 
     fig = go.Figure()
 
+    # TC histórico
     fig.add_trace(
         go.Scatter(
-            x=df_bt.index,
+            x=x_vals,
             y=df_bt["tc_sunat"],
             mode="lines",
             name="TC SUNAT histórico",
-            line=dict(width=2),
+            line=dict(width=2)
         )
     )
 
+    # TC VaR (línea horizontal)
     fig.add_trace(
         go.Scatter(
-            x=[df_bt.index[0], df_bt.index[-1]],
-            y=[tc_proj, tc_proj],
+            x=x_vals,
+            y=[tc_var] * len(x_vals),
             mode="lines",
-            name="TC proyectado (media)",
-            line=dict(width=2, dash="dash"),
+            name=f"TC VaR ({tc_var:.4f})",
+            line=dict(width=2, dash="dash", color="#FFA500")  # naranja
+        )
+    )
+
+    # TC CVaR (línea horizontal)
+    fig.add_trace(
+        go.Scatter(
+            x=x_vals,
+            y=[tc_cvar] * len(x_vals),
+            mode="lines",
+            name=f"TC CVaR ({tc_cvar:.4f})",
+            line=dict(width=2, dash="dash", color="#FF4C4C")  # rojo
         )
     )
 
     fig.update_layout(
-        title="Backtesting simple del modelo vs TC SUNAT observado",
+        title="Backtesting simple del modelo",
         xaxis_title="Fecha",
         yaxis_title="Tipo de cambio (S/ por US$)",
-        hovermode="x unified",
         template="plotly_dark",
-        height=400,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                    xanchor="center", x=0.5)
     )
 
     return fig
-
 
 def main():
     st.set_page_config(page_title="Proyección TC SUNAT USD/PEN", layout="wide")
