@@ -326,25 +326,61 @@ def ajustar_garch(retornos_log: pd.Series):
 
 def simular_arma_garch(res_garch, S0: float, n_steps: int, n_sims: int) -> np.ndarray:
     """
-    Simula trayectorias del TC a partir de un modelo GARCH ajustado
-    sobre retornos en porcentaje.
-    Devuelve un array de shape (n_sims, n_steps) con niveles de tipo de cambio.
-    """
-    sim = res_garch.model.simulate(
-        res_garch.params,
-        nobs=n_steps,
-        burn=100,
-        nreps=n_sims,   # 👈 reemplaza 'repetitions' por 'nreps'
-    )
+    Simula trayectorias del tipo de cambio usando el modelo GARCH(1,1)
+    ajustado en `ajustar_garch`.
 
-    # 'data' son retornos diarios en %, shape ≈ (n_steps, n_sims)
-    r_pct = sim["data"]
-    # Pasamos de % a log-retornos en decimales
+    - El modelo está estimado sobre retornos EN PORCENTAJE (100 * r_log).
+    - Aquí simulamos retornos en %, luego los convertimos a log-retornos
+      para construir niveles de TC.
+
+    Devuelve:
+        paths: array (n_sims, n_steps) con los niveles simulados de TC.
+    """
+    params = res_garch.params
+
+    # Helper para encontrar parámetros aunque cambie un poco el nombre
+    def get_param(name_like: str):
+        for k in params.index:
+            if name_like in k:
+                return float(params[k])
+        raise KeyError(
+            f"No se encontró un parámetro que contenga '{name_like}' en "
+            f"res_garch.params: {list(params.index)}"
+        )
+
+    # GARCH(1,1): sigma_t^2 = omega + alpha * r_{t-1}^2 + beta * sigma_{t-1}^2
+    omega = get_param("omega")
+    alpha = get_param("alpha")
+    beta = get_param("beta")
+
+    # Varianza incondicional (en la escala de %)
+    if alpha + beta < 0.999:
+        var_uncond = omega / (1.0 - alpha - beta)
+    else:
+        # Si el proceso es casi no estacionario, usamos la varianza muestral
+        var_uncond = float(np.var(res_garch.resid * 100.0))
+
+    if var_uncond <= 0:
+        var_uncond = 1.0
+
+    # Inicializamos matrices
+    # sigma2 y r_pct están en la escala de PORCENTAJE
+    sigma2 = np.full((n_steps + 1, n_sims), var_uncond, dtype=float)
+    r_pct = np.zeros((n_steps, n_sims), dtype=float)
+
+    # Simulamos GARCH(1,1)
+    for t in range(n_steps):
+        eps = np.random.normal(size=n_sims)        # shocks ~ N(0,1)
+        sigma_t = np.sqrt(sigma2[t])              # desviación estándar en %
+        r_pct[t] = sigma_t * eps                  # retorno en %
+        sigma2[t + 1] = omega + alpha * (r_pct[t] ** 2) + beta * sigma2[t]
+
+    # Pasamos de retornos en % a log-retornos en DECIMAL
     r_log = r_pct / 100.0
 
-    # Construimos niveles de TC
+    # Construimos niveles de tipo de cambio
     log_S0 = np.log(S0)
-    log_paths = log_S0 + np.cumsum(r_log, axis=0)
-    paths = np.exp(log_paths).T  # (n_sims, n_steps)
+    log_paths = log_S0 + np.cumsum(r_log, axis=0)   # shape: (n_steps, n_sims)
+    paths = np.exp(log_paths).T                     # -> (n_sims, n_steps)
 
     return paths
