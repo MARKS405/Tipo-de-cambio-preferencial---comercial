@@ -374,10 +374,16 @@ def main():
         # Backtesting si aplica
         hoy_actual = date.today()
         if fecha_final_cal < hoy_actual:
-            st.subheader("Backtesting simple del modelo")
-            tc_proj_media = df_resumen["media"].iloc[-1]
-            fig_bt = plot_backtesting(df_sunat_full, fecha_inicio, fecha_final_cal, tc_proj_media)
-            st.plotly_chart(fig_bt, use_container_width=True)
+          st.subheader("Backtesting simple del modelo")
+ 
+          fig_backtesting = plot_backtesting(
+           df_sunat_full,
+           fecha_inicio,
+           fecha_final_cal,
+           tc_var,
+           tc_cvar,
+          )
+          st.plotly_chart(fig_backtesting, use_container_width=True)
 
         # Nota metodológica
         st.subheader("Nota metodológica (resumen)")
