@@ -324,31 +324,27 @@ def ajustar_garch(retornos_log: pd.Series):
     return res
 
 
-def simular_arma_garch(res, S0: float, n_steps: int, n_sims: int) -> np.ndarray:
+def simular_arma_garch(res_garch, S0: float, n_steps: int, n_sims: int) -> np.ndarray:
     """
-    Simula retornos diarios con el modelo GARCH ajustado y construye
-    trayectorias de TC. Usa la función simulate de arch para simplificar.
-    Devuelve un array (n_sims, n_steps+1) con niveles de TC.
+    Simula trayectorias del TC a partir de un modelo GARCH ajustado
+    sobre retornos en porcentaje.
+    Devuelve un array de shape (n_sims, n_steps) con niveles de tipo de cambio.
     """
-    if n_steps <= 0:
-        raise ValueError("n_steps debe ser positivo.")
-    if n_sims <= 0:
-        raise ValueError("n_sims debe ser positivo.")
+    sim = res_garch.model.simulate(
+        res_garch.params,
+        nobs=n_steps,
+        burn=100,
+        nreps=n_sims,   # 👈 reemplaza 'repetitions' por 'nreps'
+    )
 
-    sim = res.model.simulate(res.params, nobs=n_steps, repetitions=n_sims)
-    # 'data' viene en forma (n_steps, n_sims) con retornos en %
-    r_pct = np.asarray(sim["data"])  # shape (n_steps, n_sims)
-    if r_pct.shape[1] != n_sims:
-        # En algunas versiones viene (n_sims, n_steps)
-        r_pct = r_pct.T
+    # 'data' son retornos diarios en %, shape ≈ (n_steps, n_sims)
+    r_pct = sim["data"]
+    # Pasamos de % a log-retornos en decimales
+    r_log = r_pct / 100.0
 
-    # Convertimos a log-retornos en decimales
-    r_log = (r_pct / 100.0)
-
-    paths = np.zeros((n_sims, n_steps + 1), dtype=float)
-    paths[:, 0] = S0
-
-    for t in range(n_steps):
-        paths[:, t + 1] = paths[:, t] * np.exp(r_log[:, t])
+    # Construimos niveles de TC
+    log_S0 = np.log(S0)
+    log_paths = log_S0 + np.cumsum(r_log, axis=0)
+    paths = np.exp(log_paths).T  # (n_sims, n_steps)
 
     return paths
