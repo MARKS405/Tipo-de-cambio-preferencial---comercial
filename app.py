@@ -1,4 +1,3 @@
-
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -72,7 +71,10 @@ def plot_hist_y_sim(df_hist: pd.DataFrame, fechas_future, paths: np.ndarray):
 
 
 def plot_escenarios_y_var(df_resumen: pd.DataFrame, tc_var: float):
-    """Gráfico de la media esperada, banda P05-P95 y nivel de VaR en TC."""
+    """
+    Gráfico de la media esperada, banda P05-P95 y nivel de TC mínimo propuesto
+    (derivado del VaR).
+    """
     x = df_resumen.index
 
     fig = go.Figure()
@@ -102,19 +104,19 @@ def plot_escenarios_y_var(df_resumen: pd.DataFrame, tc_var: float):
         )
     )
 
-    # VaR en TC como línea horizontal
+    # TC mínimo propuesto (VaR) como línea horizontal
     fig.add_trace(
         go.Scatter(
             x=[x[0], x[-1]],
             y=[tc_var, tc_var],
             mode="lines",
-            name="TC preferencial (VaR)",
+            name="Tipo de cambio mínimo propuesto",
             line=dict(width=2, dash="dash", color="#ff7f0e"),
         )
     )
 
     fig.update_layout(
-        title="Escenario central, banda de incertidumbre y TC preferencial (VaR)",
+        title="Escenario central, banda de incertidumbre y TC mínimo propuesto",
         xaxis_title="Fecha",
         yaxis_title="Tipo de cambio (S/ por US$)",
         hovermode="x unified",
@@ -125,20 +127,14 @@ def plot_escenarios_y_var(df_resumen: pd.DataFrame, tc_var: float):
     return fig
 
 
-import plotly.graph_objects as go
-
 def plot_backtesting(df_sunat_full: pd.DataFrame,
                      fecha_inicio: date,
                      fecha_final: date,
                      tc_var: float,
                      tc_cvar: float) -> go.Figure:
     """
-    Gráfico de backtesting: TC SUNAT histórico vs niveles TC VaR y TC CVaR.
-
-    - df_sunat_full: DataFrame con columna 'tc_sunat' indexado por fecha.
-    - fecha_inicio, fecha_final: rango de backtesting.
-    - tc_var: tipo de cambio preferencial basado en VaR.
-    - tc_cvar: tipo de cambio preferencial basado en CVaR.
+    Gráfico de backtesting: TC SUNAT histórico vs niveles de TC mínimo propuesto
+    (VaR) y TC propuesto (CVaR).
     """
     mask = (
         (df_sunat_full.index.date >= fecha_inicio) &
@@ -147,7 +143,6 @@ def plot_backtesting(df_sunat_full: pd.DataFrame,
     df_bt = df_sunat_full.loc[mask].copy()
 
     if df_bt.empty:
-        # Por seguridad, si no hay datos en ese rango
         fig = go.Figure()
         fig.update_layout(
             title="Backtesting simple del modelo",
@@ -172,25 +167,25 @@ def plot_backtesting(df_sunat_full: pd.DataFrame,
         )
     )
 
-    # TC VaR (línea horizontal)
+    # TC mínimo propuesto (VaR)
     fig.add_trace(
         go.Scatter(
             x=x_vals,
             y=[tc_var] * len(x_vals),
             mode="lines",
-            name=f"TC VaR ({tc_var:.4f})",
-            line=dict(width=2, dash="dash", color="#FFA500")  # naranja
+            name=f"TC mínimo propuesto ({tc_var:.4f})",
+            line=dict(width=2, dash="dash", color="#FFA500"),
         )
     )
 
-    # TC CVaR (línea horizontal)
+    # TC propuesto (CVaR)
     fig.add_trace(
         go.Scatter(
             x=x_vals,
             y=[tc_cvar] * len(x_vals),
             mode="lines",
-            name=f"TC CVaR ({tc_cvar:.4f})",
-            line=dict(width=2, dash="dash", color="#FF4C4C")  # rojo
+            name=f"TC propuesto ({tc_cvar:.4f})",
+            line=dict(width=2, dash="dash", color="#FF4C4C"),
         )
     )
 
@@ -199,11 +194,17 @@ def plot_backtesting(df_sunat_full: pd.DataFrame,
         xaxis_title="Fecha",
         yaxis_title="Tipo de cambio (S/ por US$)",
         template="plotly_dark",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02,
-                    xanchor="center", x=0.5)
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="center",
+            x=0.5,
+        ),
     )
 
     return fig
+
 
 def main():
     st.set_page_config(page_title="Proyección TC SUNAT USD/PEN", layout="wide")
@@ -253,26 +254,19 @@ def main():
     # ------------------------------------------------------------------
     st.sidebar.header("Parámetros de simulación")
 
-    n_sims = st.sidebar.number_input(
-        "Número de simulaciones",
-        min_value=500,
-        max_value=50000,
-        value=10000,
-        step=500,
-    )
-    n_sims = int(n_sims)
-
     nivel_conf = st.sidebar.slider(
-        "Nivel de confianza para VaR",
-        min_value=0.80,
+        "Nivel de confianza para el tipo de cambio mínimo",
+        min_value=0.90,
         max_value=0.99,
         value=0.95,
         step=0.01,
     )
 
     st.sidebar.markdown("---")
+    st.sidebar.caption("Número de simulaciones Monte Carlo: **10 000** (fijo en el modelo).")
     st.sidebar.caption(
-        f"Días hábiles (plazo limpio) entre {fecha_inicio} y {fecha_final_cal}: **{plazo_dias_habiles}**"
+        f"Días hábiles (plazo limpio) entre {fecha_inicio} y {fecha_final_cal}: "
+        f"**{plazo_dias_habiles}**"
     )
     st.sidebar.caption(
         "Los feriados usados están definidos en el módulo `tc_sunat_model`. "
@@ -323,17 +317,22 @@ def main():
 
         S0 = float(df_hist["tc_sunat"].iloc[-1])
 
+        # Número fijo de simulaciones
+        n_sims = 10000
+
         try:
             paths = simular_arma_garch(res_garch, S0=S0, n_steps=n_steps, n_sims=n_sims)
         except Exception as e:
             st.error(f"Error al simular trayectorias GARCH: {e}")
             return
 
-        # 4) Resumen numérico y VaR/CVaR
+        # 4) Resumen numérico y TC mínimo / TC propuesto
         df_resumen = resumen_paths(paths, fechas_future)
         S_T = paths[:, -1]
 
-        var_ret, cvar_ret, tc_var, tc_cvar = var_cvar_retorno(S_T, S0, alpha=nivel_conf)
+        var_ret, cvar_ret, tc_var, tc_cvar = var_cvar_retorno(
+            S_T, S0, alpha=nivel_conf
+        )
 
         fecha_final_efectiva = fechas_future[-1].date()
 
@@ -346,18 +345,28 @@ def main():
         with col1:
             st.metric("TC SUNAT actual (aprox.)", f"{S0:.4f}")
         with col2:
-            st.metric("TC esperado al vencimiento (media)", f"{df_resumen['media'].iloc[-1]:.4f}")
+            st.metric(
+                "TC esperado al vencimiento (media)",
+                f"{df_resumen['media'].iloc[-1]:.4f}",
+            )
         with col3:
-            st.metric(f"TC VaR {int(nivel_conf*100)}% al vencimiento", f"{tc_var:.4f}")
+            st.metric(
+                "Tipo de cambio mínimo propuesto",
+                f"{tc_var:.4f}",
+            )
         with col4:
-            st.metric(f"TC CVaR {int(nivel_conf*100)}% al vencimiento", f"{tc_cvar:.4f}")
+            st.metric(
+                "Tipo de cambio propuesto",
+                f"{tc_cvar:.4f}",
+            )
 
         texto_resumen = (
-            "- Fecha final calendario solicitada: **{}**  \n"
-            "- Fecha final hábil efectiva (último paso de la simulación): **{}**  \n"
-            "- VaR sobre retorno total: **{:.2f}%**  \n"
-            "- CVaR sobre retorno total: **{:.2f}%**"
-        ).format(fecha_final_cal, fecha_final_efectiva, var_ret * 100, cvar_ret * 100)
+            f"- Fecha final calendario solicitada: **{fecha_final_cal}**  \n"
+            f"- Fecha final hábil efectiva (último paso de la simulación): "
+            f"**{fecha_final_efectiva}**  \n"
+            f"- Nivel de confianza usado para el TC mínimo propuesto: "
+            f"**{int(nivel_conf * 100)}%**"
+        )
 
         st.write(texto_resumen)
 
@@ -366,24 +375,24 @@ def main():
         fig_hist = plot_hist_y_sim(df_hist, fechas_future, paths)
         st.plotly_chart(fig_hist, use_container_width=True)
 
-        # Gráfico 2: media, banda y VaR
-        st.subheader("Escenarios de proyección y nivel de VaR al vencimiento")
+        # Gráfico 2: media, banda y TC mínimo propuesto
+        st.subheader("Escenarios de proyección y tipo de cambio mínimo propuesto")
         fig_var = plot_escenarios_y_var(df_resumen, tc_var)
         st.plotly_chart(fig_var, use_container_width=True)
 
         # Backtesting si aplica
         hoy_actual = date.today()
         if fecha_final_cal < hoy_actual:
-          st.subheader("Backtesting simple del modelo")
- 
-          fig_backtesting = plot_backtesting(
-           df_sunat_full,
-           fecha_inicio,
-           fecha_final_cal,
-           tc_var,
-           tc_cvar,
-          )
-          st.plotly_chart(fig_backtesting, use_container_width=True)
+            st.subheader("Backtesting simple del modelo")
+
+            fig_backtesting = plot_backtesting(
+                df_sunat_full,
+                fecha_inicio,
+                fecha_final_cal,
+                tc_var,
+                tc_cvar,
+            )
+            st.plotly_chart(fig_backtesting, use_container_width=True)
 
         # Nota metodológica
         st.subheader("Nota metodológica (resumen)")
@@ -391,8 +400,9 @@ def main():
             "El modelo utiliza el tipo de cambio SUNAT limpio (días hábiles reales), "
             "calcula retornos logarítmicos y ajusta un GARCH(1,1) con distribución normal sobre "
             "retornos diarios en porcentaje. A partir de este modelo se simulan trayectorias de "
-            "Monte Carlo para el tipo de cambio hasta la fecha objetivo, y se calcula el VaR/CVaR "
-            "sobre el retorno total al vencimiento para derivar un TC preferencial."
+            "Monte Carlo para el tipo de cambio hasta la fecha objetivo. Con la distribución "
+            "de niveles simulados al vencimiento se deriva un tipo de cambio mínimo propuesto "
+            "(VaR) y un tipo de cambio propuesto (CVaR)."
         )
 
 
