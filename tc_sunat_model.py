@@ -367,7 +367,7 @@ def ajustar_garch(retornos_log: pd.Series):
     if len(r) < 200:
         raise ValueError("Se requieren al menos 200 retornos para ajustar GARCH.")
 
-    am = arch_model(r, mean="Zero", vol="GARCH", p=1, q=1, dist="normal")
+    am = arch_model(r, mean="Zero", vol="GARCH", p=1, q=1, dist="t")
     res = am.fit(disp="off")
     return res
 
